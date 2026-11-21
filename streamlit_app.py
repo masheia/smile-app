@@ -2,7 +2,7 @@ import streamlit as st
 from snowflake.connector import connect
 
 st.set_page_config(page_title="Smile", layout="centered")
-st.title("Smile")
+st.title("Smile 😊")
 st.write("Leave a kind line. Read the lines other people chose to share.")
 
 REQUIRED_SECRETS = ("account", "user", "password", "role", "warehouse", "database", "schema")

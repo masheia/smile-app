@@ -1,4 +1,4 @@
-# Smile
+# Smile 😊
 
 Sometimes one kind sentence is enough to get someone through the day.
 
