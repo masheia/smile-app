@@ -105,13 +105,18 @@ if submitted:
         word_name = word_name_for(cleaned)
         run(
             """
-            INSERT INTO smile_entries (user_id, word_name, is_public)
-            SELECT %(user_id)s, %(word_name)s, %(is_public)s
+            INSERT INTO smile_entries (payload)
+            SELECT OBJECT_CONSTRUCT(
+              'user_id', %(user_id)s,
+              'word_name', %(word_name)s,
+              'public', %(is_public)s = 1,
+              'likes', 0
+            )
             """,
             {
                 "user_id": int(current_user_id),
                 "word_name": word_name,
-                "is_public": is_public,
+                "is_public": 1 if is_public else 0,
             },
         )
         if is_public:
@@ -128,12 +133,12 @@ else:
     rows = run(
         """
         SELECT
-          e.entry_id,
-          e.word_name,
-          e.likes
-        FROM smile_entries e
-        WHERE e.is_public
-        ORDER BY e.entry_id DESC
+          entry_id,
+          payload:word_name::STRING,
+          payload:likes::NUMBER
+        FROM smile_entries
+        WHERE payload:public::BOOLEAN
+        ORDER BY entry_id DESC
         LIMIT 30
         """
     )
@@ -161,7 +166,12 @@ else:
             run(
                 """
                 UPDATE smile_entries
-                SET likes = likes + 1
+                SET payload = OBJECT_INSERT(
+                  payload,
+                  'likes',
+                  payload:likes::NUMBER + 1,
+                  TRUE
+                )
                 WHERE entry_id = %(event_id)s
                 """,
                 {"event_id": event_id},
@@ -186,7 +196,7 @@ else:
     if current_user_id is not None:
         saved_lines = run(
             """
-            SELECT e.word_name
+            SELECT e.payload:word_name::STRING
             FROM smile_kept k
             JOIN smile_entries e
               ON e.entry_id = k.entry_id

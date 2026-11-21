@@ -55,10 +55,7 @@ CREATE TABLE IF NOT EXISTS smile_app_db.public.smile_dictionary (
 CREATE TABLE IF NOT EXISTS smile_app_db.public.smile_entries (
   entry_id NUMBER IDENTITY,
   created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
-  user_id NUMBER,
-  word_name STRING,
-  is_public BOOLEAN,
-  likes NUMBER DEFAULT 0
+  payload VARIANT
 );
 
 CREATE TABLE IF NOT EXISTS smile_app_db.public.smile_kept (
