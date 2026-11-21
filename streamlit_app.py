@@ -1,5 +1,3 @@
-import json
-
 import streamlit as st
 from snowflake.connector import connect
 
@@ -41,11 +39,53 @@ def run(sql, params=None):
         connection.close()
 
 
+def user_id_for(name):
+    found = run(
+        "SELECT user_id FROM smile_users WHERE name = %(name)s",
+        {"name": name},
+    )
+    if found:
+        return found[0][0]
+    run(
+        """
+        INSERT INTO smile_users (user_id, name)
+        SELECT smile_user_seq.NEXTVAL, %(name)s
+        """,
+        {"name": name},
+    )
+    found = run(
+        "SELECT user_id FROM smile_users WHERE name = %(name)s",
+        {"name": name},
+    )
+    return found[0][0]
+
+
+def word_name_for(text):
+    key = text.lower()
+    found = run(
+        "SELECT word_name FROM smile_dictionary WHERE word_key = %(key)s",
+        {"key": key},
+    )
+    if found:
+        return found[0][0]
+    run(
+        """
+        INSERT INTO smile_dictionary (word_name, word_key)
+        SELECT %(text)s, %(key)s
+        """,
+        {"text": text, "key": key},
+    )
+    return text
+
+
 if "liked" not in st.session_state:
     st.session_state.liked = []
 
-name = st.text_input("Your name", max_chars=40, placeholder="Same name brings back the lines you saved")
-st.caption("A name is enough to find your saved lines. It is not a password.")
+name = st.text_input("Your name", max_chars=40)
+clean_name = " ".join(name.split())[:40]
+current_user_id = None
+if clean_name and secrets_ready():
+    current_user_id = user_id_for(clean_name)
 
 with st.form("share", clear_on_submit=True):
     text = st.text_input("A word, a thought, or some encouragement", max_chars=200)
@@ -54,22 +94,30 @@ with st.form("share", clear_on_submit=True):
 
 if submitted:
     cleaned = " ".join(text.split())[:200]
-    if not cleaned:
+    if not clean_name:
+        st.error("Type your name first.")
+    elif not cleaned:
         st.error("Write something first.")
     elif not secrets_ready():
         st.error("Snowflake is not connected yet.")
     else:
         is_public = share_as == "Public"
-        payload = {"text": cleaned, "public": is_public, "likes": 0}
+        word_name = word_name_for(cleaned)
         run(
-            "INSERT INTO smile_words (payload) SELECT PARSE_JSON(%(payload)s)",
-            {"payload": json.dumps(payload)},
+            """
+            INSERT INTO smile_entries (user_id, word_name, is_public)
+            SELECT %(user_id)s, %(word_name)s, %(is_public)s
+            """,
+            {
+                "user_id": int(current_user_id),
+                "word_name": word_name,
+                "is_public": is_public,
+            },
         )
-        st.write(f"“{cleaned}”")
         if is_public:
-            st.caption("Shared. Other people can read this.")
+            st.success("Shared.")
         else:
-            st.caption("Saved for you. Other people cannot read this.")
+            st.success("Kept private.")
 
 st.divider()
 st.subheader("Shared lines")
@@ -80,12 +128,12 @@ else:
     rows = run(
         """
         SELECT
-          event_id,
-          payload:text::STRING,
-          COALESCE(payload:likes::NUMBER, 0)
-        FROM smile_words
-        WHERE payload:public::BOOLEAN = TRUE
-        ORDER BY event_id DESC
+          e.entry_id,
+          e.word_name,
+          e.likes
+        FROM smile_entries e
+        WHERE e.is_public
+        ORDER BY e.entry_id DESC
         LIMIT 30
         """
     )
@@ -93,15 +141,14 @@ else:
         st.write("Be the first kind line on this page.")
 
     saved_ids = []
-    clean_name = " ".join(name.split())[:40]
-    if clean_name:
+    if current_user_id is not None:
         saved_rows = run(
             """
-            SELECT payload:word_id::NUMBER
-            FROM smile_saves
-            WHERE payload:name::STRING = %(name)s
+            SELECT entry_id
+            FROM smile_kept
+            WHERE user_id = %(user_id)s
             """,
-            {"name": clean_name},
+            {"user_id": int(current_user_id)},
         )
         saved_ids = [row[0] for row in saved_rows]
 
@@ -113,14 +160,9 @@ else:
         if like_col.button(like_label, key=f"like-{event_id}", disabled=already_liked):
             run(
                 """
-                UPDATE smile_words
-                SET payload = OBJECT_INSERT(
-                  payload,
-                  'likes',
-                  COALESCE(payload:likes::NUMBER, 0) + 1,
-                  TRUE
-                )
-                WHERE event_id = %(event_id)s
+                UPDATE smile_entries
+                SET likes = likes + 1
+                WHERE entry_id = %(event_id)s
                 """,
                 {"event_id": event_id},
             )
@@ -129,26 +171,29 @@ else:
         if event_id in saved_ids:
             save_col.write("Saved")
         elif save_col.button("Save", key=f"save-{event_id}"):
-            if not clean_name:
+            if current_user_id is None:
                 st.warning("Type your name first, then save.")
             else:
                 run(
-                    "INSERT INTO smile_saves (payload) SELECT PARSE_JSON(%(payload)s)",
-                    {"payload": json.dumps({"name": clean_name, "word_id": event_id})},
+                    """
+                    INSERT INTO smile_kept (user_id, entry_id)
+                    SELECT %(user_id)s, %(entry_id)s
+                    """,
+                    {"user_id": int(current_user_id), "entry_id": event_id},
                 )
                 st.rerun()
 
-    if clean_name:
+    if current_user_id is not None:
         saved_lines = run(
             """
-            SELECT w.payload:text::STRING
-            FROM smile_saves s
-            JOIN smile_words w
-              ON w.event_id = s.payload:word_id::NUMBER
-            WHERE s.payload:name::STRING = %(name)s
-            ORDER BY s.save_id DESC
+            SELECT e.word_name
+            FROM smile_kept k
+            JOIN smile_entries e
+              ON e.entry_id = k.entry_id
+            WHERE k.user_id = %(user_id)s
+            ORDER BY k.created_at DESC
             """,
-            {"name": clean_name},
+            {"user_id": int(current_user_id)},
         )
         if saved_lines:
             st.divider()

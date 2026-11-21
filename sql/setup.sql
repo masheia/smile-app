@@ -22,6 +22,16 @@ CREATE WAREHOUSE IF NOT EXISTS smile_app_wh
 CREATE DATABASE IF NOT EXISTS smile_app_db;
 CREATE SCHEMA IF NOT EXISTS smile_app_db.public;
 
+CREATE SEQUENCE IF NOT EXISTS smile_app_db.public.smile_user_seq
+  START = 1
+  INCREMENT = 1;
+
+CREATE TABLE IF NOT EXISTS smile_app_db.public.smile_users (
+  user_id NUMBER,
+  created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+  name STRING UNIQUE
+);
+
 CREATE TABLE IF NOT EXISTS smile_app_db.public.smile_words (
   event_id NUMBER IDENTITY,
   created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
@@ -34,6 +44,33 @@ GRANT USAGE ON WAREHOUSE smile_app_wh TO ROLE smile_app_role;
 GRANT USAGE ON DATABASE smile_app_db TO ROLE smile_app_role;
 GRANT USAGE ON SCHEMA smile_app_db.public TO ROLE smile_app_role;
 GRANT INSERT, SELECT, UPDATE ON TABLE smile_app_db.public.smile_words TO ROLE smile_app_role;
+GRANT USAGE ON SEQUENCE smile_app_db.public.smile_user_seq TO ROLE smile_app_role;
+GRANT INSERT, SELECT ON TABLE smile_app_db.public.smile_users TO ROLE smile_app_role;
+
+CREATE TABLE IF NOT EXISTS smile_app_db.public.smile_dictionary (
+  word_name STRING,
+  word_key STRING UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS smile_app_db.public.smile_entries (
+  entry_id NUMBER IDENTITY,
+  created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+  user_id NUMBER,
+  word_name STRING,
+  is_public BOOLEAN,
+  likes NUMBER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS smile_app_db.public.smile_kept (
+  user_id NUMBER,
+  entry_id NUMBER,
+  created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+  UNIQUE (user_id, entry_id)
+);
+
+GRANT INSERT, SELECT ON TABLE smile_app_db.public.smile_dictionary TO ROLE smile_app_role;
+GRANT INSERT, SELECT, UPDATE ON TABLE smile_app_db.public.smile_entries TO ROLE smile_app_role;
+GRANT INSERT, SELECT ON TABLE smile_app_db.public.smile_kept TO ROLE smile_app_role;
 
 CREATE TABLE IF NOT EXISTS smile_app_db.public.smile_saves (
   save_id NUMBER IDENTITY,
