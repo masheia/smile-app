@@ -108,6 +108,7 @@ if submitted:
             INSERT INTO smile_entries (payload)
             SELECT OBJECT_CONSTRUCT(
               'user_id', %(user_id)s,
+              'name', %(name)s,
               'word_name', %(word_name)s,
               'public', %(is_public)s = 1,
               'likes', 0
@@ -115,6 +116,7 @@ if submitted:
             """,
             {
                 "user_id": int(current_user_id),
+                "name": clean_name,
                 "word_name": word_name,
                 "is_public": 1 if is_public else 0,
             },
@@ -133,11 +135,14 @@ else:
     rows = run(
         """
         SELECT
-          entry_id,
-          payload:word_name::STRING,
-          payload:likes::NUMBER
-        FROM smile_entries
-        WHERE payload:public::BOOLEAN
+          e.entry_id,
+          e.payload:word_name::STRING,
+          e.payload:likes::NUMBER,
+          COALESCE(u.name, e.payload:name::STRING)
+        FROM smile_entries e
+        LEFT JOIN smile_users u
+          ON u.user_id = e.payload:user_id::NUMBER
+        WHERE e.payload:public::BOOLEAN
         ORDER BY entry_id DESC
         LIMIT 30
         """
@@ -157,7 +162,9 @@ else:
         )
         saved_ids = [row[0] for row in saved_rows]
 
-    for event_id, line, likes in rows:
+    for event_id, line, likes, author in rows:
+        if author:
+            st.write(author)
         st.write(f"“{line}”")
         like_col, save_col = st.columns(2)
         already_liked = event_id in st.session_state.liked
@@ -196,10 +203,14 @@ else:
     if current_user_id is not None:
         saved_lines = run(
             """
-            SELECT e.payload:word_name::STRING
+            SELECT
+              e.payload:word_name::STRING,
+              COALESCE(u.name, e.payload:name::STRING)
             FROM smile_kept k
             JOIN smile_entries e
               ON e.entry_id = k.entry_id
+            LEFT JOIN smile_users u
+              ON u.user_id = e.payload:user_id::NUMBER
             WHERE k.user_id = %(user_id)s
             ORDER BY k.created_at DESC
             """,
@@ -208,5 +219,7 @@ else:
         if saved_lines:
             st.divider()
             st.subheader("Saved for you")
-            for (line,) in saved_lines:
+            for line, author in saved_lines:
+                if author:
+                    st.write(author)
                 st.write(f"“{line}”")
